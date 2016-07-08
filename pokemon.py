@@ -8,6 +8,7 @@ import hangups, plugins, asyncio, logging, datetime
 import urllib.request
 import json
 import aiohttp, os, io
+import csv
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +113,27 @@ def gettype(bot, pkmntype, logger):
 def pokedex(bot, event, pokemon):
   '''Returns the number, types, weaknesses and image of a pokemon'''
   if pokemon.isdigit(): return
+  sheeturl="https://docs.google.com/spreadsheets/d/14Jbib1SwNWuZ7s5nuLn5qSoUb3lu0zSGsYdrhxuClPw/export?format=csv"
+  sheetrequest = urllib.request.Request(sheeturl, headers = {"User-agent":"Mozilla/5.0"})
+  sheetdict=dict()
+  revdict=dict()
+  try:
+    sheetdata = urllib.request.urlopen(sheetrequest).read().decode("utf-8")
+    sheetreader = csv.DictReader(sheetdata.split("\r\n"))
+    for row in sheetreader:
+      eng=row['Englisch'].lower()
+      deu=row['Deutsch'].lower()
+      sheetdict[deu]=eng
+      revdict[eng]=deu
+    logger.info(sheetdict)
+  except urllib.error.URLError as e:
+    yield from bot.coro_send_message(event.conv, "{}: Error: {}".format(event.user.full_name, "sheet error"))
+
+  if pokemon.lower() in sheetdict:
+    pokemon = sheetdict[pokemon.lower()]
   url = "http://pokeapi.co/api/v2/pokemon/{}/".format(pokemon.lower())
   request = urllib.request.Request(url, headers = {"User-agent":"Mozilla/5.0"})
   cache = getfromcache(bot, pokemon.lower())
-
   if cache:
     logger.info("Found {} in cache".format(pokemon.lower()))
     data = cache
@@ -132,7 +150,10 @@ def pokedex(bot, event, pokemon):
     pkmn = "<b><a href='http://pokemondb.net/pokedex/{}'>{}</a></b> (#{})".format(pokemon.lower(),pokemon.capitalize(),data["id"])
 
   type1 = gettype(bot, data['types'][0]['type']['name'], logger)
-  pkmn = pkmn + "<br><b>Type</b>: <a href='http://pokemondb.net/type/{}'>{}</a>".format(data['types'][0]["type"]["name"],data['types'][0]["type"]["name"].capitalize())
+  deupoke=""
+  if pokemon.lower() in revdict:
+    deupoke="<br/>"+revdict[pokemon.lower()].capitalize()
+  pkmn = pkmn + deupoke+"<br><b>Type</b>: <a href='http://pokemondb.net/type/{}'>{}</a>".format(data['types'][0]["type"]["name"],data['types'][0]["type"]["name"].capitalize())
   if len(data['types']) > 1 :
     type2 = gettype(bot, data['types'][1]['type']['name'], logger)
     pkmn = pkmn + " / <a href='http://pokemondb.net/type/{}'>{}</a>".format(data['types'][1]["type"]["name"],data['types'][1]["type"]["name"].capitalize())
